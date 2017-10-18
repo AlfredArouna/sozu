@@ -8,7 +8,7 @@ use certificate::{calculate_fingerprint,split_certificate_chain};
 use openssl::ssl;
 use toml;
 
-use messages::Application;
+use messages::{Application,BackendProtocol};
 use messages::{CertFingerprint,CertificateAndKey,Order,HttpFront,HttpsFront,Instance,HttpProxyConfiguration,HttpsProxyConfiguration};
 
 use data::{ConfigCommand,ConfigMessage,PROTOCOL_VERSION};
@@ -188,6 +188,7 @@ pub struct AppConfig {
   pub certificate_chain: Option<String>,
   pub backends:          Vec<String>,
   pub sticky_session:    Option<bool>,
+  pub backend_protocol:  BackendProtocol,
 }
 
 #[derive(Debug,Clone,PartialEq,Eq,Serialize,Deserialize)]
@@ -237,8 +238,9 @@ impl Config {
         .map(split_certificate_chain);
 
       let order = Order::AddApplication(Application {
-        app_id: id.to_string(),
-        sticky_session: app.sticky_session.unwrap_or(false),
+        app_id:           id.to_string(),
+        sticky_session:   app.sticky_session.unwrap_or(false),
+        backend_protocol: app.backend_protocol,
       });
 
       v.push(ConfigMessage {

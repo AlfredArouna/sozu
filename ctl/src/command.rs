@@ -2,7 +2,8 @@ use sozu_command::config::Config;
 use sozu_command::channel::Channel;
 use sozu_command::certificate::{calculate_fingerprint,split_certificate_chain};
 use sozu_command::data::{AnswerData,ConfigCommand,ConfigMessage,ConfigMessageAnswer,ConfigMessageStatus,RunState};
-use sozu_command::messages::{Application, Order, Instance, HttpFront, HttpsFront, CertificateAndKey, CertFingerprint, TcpFront, Query};
+use sozu_command::messages::{Application, Order, Instance, HttpFront, HttpsFront,
+  CertificateAndKey, CertFingerprint, TcpFront, Query, BackendProtocol};
 
 use std::collections::HashSet;
 use rand::{thread_rng, Rng};
@@ -428,8 +429,9 @@ pub fn metrics(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>) {
 
 pub fn add_application(channel: &mut Channel<ConfigMessage,ConfigMessageAnswer>, app_id: &str, sticky_session: bool) {
   order_command(channel, Order::AddApplication(Application {
-    app_id:         String::from(app_id),
-    sticky_session: sticky_session,
+    app_id:           String::from(app_id),
+    sticky_session:   sticky_session,
+    backend_protocol: BackendProtocol::TCP,
   }));
 }
 
