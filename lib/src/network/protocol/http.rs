@@ -12,7 +12,7 @@ use parser::http11::{HttpState,parse_request_until_stop, parse_response_until_st
 use network::{ClientResult,Protocol};
 use network::buffer_queue::BufferQueue;
 use network::session::Readiness;
-use network::socket::{SocketHandler,SocketResult};
+use network::socket::{SocketHandler,SocketResult,BackendSocket};
 use network::protocol::ProtocolResult;
 use util::UnwrapLog;
 
@@ -39,7 +39,7 @@ pub enum ClientStatus {
 
 pub struct Http<Front:SocketHandler> {
   pub frontend:       Front,
-  pub backend:        Option<TcpStream>,
+  pub backend:        Option<BackendSocket>,
   token:              Option<Token>,
   backend_token:      Option<Token>,
   rx_count:           usize,
@@ -187,7 +187,7 @@ impl<Front:SocketHandler> Http<Front> {
   }
 
   pub fn back_socket(&self)  -> Option<&TcpStream> {
-    self.backend.as_ref()
+    self.backend.as_ref().map(|stream| stream.socket_ref())
   }
 
   pub fn front_token(&self)  -> Option<Token> {
@@ -209,7 +209,7 @@ impl<Front:SocketHandler> Http<Front> {
     }
   }
 
-  pub fn set_back_socket(&mut self, socket: TcpStream) {
+  pub fn set_back_socket(&mut self, socket: BackendSocket) {
     self.backend         = Some(socket);
   }
 
@@ -231,7 +231,7 @@ impl<Front:SocketHandler> Http<Front> {
 
   pub fn remove_backend(&mut self) -> (Option<String>, Option<SocketAddr>) {
     debug!("{}\tPROXY [{} -> {}] CLOSED BACKEND", self.log_ctx, unwrap_msg!(self.token).0, unwrap_msg!(self.backend_token).0);
-    let addr:Option<SocketAddr> = self.backend.as_ref().and_then(|sock| sock.peer_addr().ok());
+    let addr:Option<SocketAddr> = self.backend.as_ref().and_then(|sock| sock.socket_ref().peer_addr().ok());
     self.backend       = None;
     self.backend_token = None;
     (self.app_id.clone(), addr)
