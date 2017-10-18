@@ -17,7 +17,8 @@ use nom::{HexDisplay,IResult};
 use rand::random;
 
 use sozu_command::channel::Channel;
-use sozu_command::messages::{self,Application,Order,HttpFront,HttpProxyConfiguration,OrderMessage,OrderMessageAnswer,OrderMessageStatus};
+use sozu_command::messages::{self,Application,Order,HttpFront,HttpProxyConfiguration,BackendProtocol,
+  OrderMessage,OrderMessageAnswer,OrderMessageStatus};
 
 use network::{AppId,Backend,ClientResult,ConnectionError,RequiredEvents,Protocol};
 use network::backends::BackendMap;
@@ -443,10 +444,12 @@ impl ServerConfiguration {
     }
   }
 
-  pub fn backend_from_app_id(&mut self, client: &mut Client, app_id: &str, front_should_stick: bool) -> Result<TcpStream,ConnectionError> {
+  pub fn backend_from_app_id(&mut self, client: &mut Client, app_id: &str, front_should_stick: bool, protocol: BackendProtocol)
+    -> Result<BackendSocket,ConnectionError> {
+
     client.http_mut().map(|h| h.app_id = Some(String::from(app_id)));
 
-    match self.instances.backend_from_app_id(app_id) {
+    match self.instances.backend_from_app_id(app_id, protocol) {
       Err(e) => {
         client.set_answer(&self.answers.ServiceUnavailable);
         Err(e)
@@ -463,10 +466,12 @@ impl ServerConfiguration {
     }
   }
 
-  pub fn backend_from_sticky_session(&mut self, client: &mut Client, app_id: &str, sticky_session: u32) -> Result<TcpStream,ConnectionError> {
+  pub fn backend_from_sticky_session(&mut self, client: &mut Client, app_id: &str, sticky_session: u32, protocol: BackendProtocol)
+    -> Result<BackendSocket,ConnectionError> {
+
     client.http_mut().map(|h| h.app_id = Some(String::from(app_id)));
 
-    match self.instances.backend_from_sticky_session(app_id, sticky_session) {
+    match self.instances.backend_from_sticky_session(app_id, sticky_session, protocol) {
       Err(e) => {
         debug!("Couldn't find a backend corresponding to sticky_session {} for app {}", sticky_session, app_id);
         client.set_answer(&self.answers.ServiceUnavailable);
@@ -514,7 +519,9 @@ impl ProxyConfiguration<Client> for ServerConfiguration {
     let rl     = try!(client.http().unwrap().state.as_ref().unwrap().get_request_line().ok_or(ConnectionError::NoRequestLineGiven));
     if let Some(app_id) = self.frontend_from_request(&host, &rl.uri).map(|ref front| front.app_id.clone()) {
 
-      let front_should_stick = self.applications.get(&app_id).map(|ref app| app.sticky_session).unwrap_or(false);
+      let (protocol, front_should_stick) = self.applications.get(&app_id).map(|ref app| {
+        (app.backend_protocol, app.sticky_session)
+      }).unwrap_or((BackendProtocol::TCP, false));
 
       if (client.http().map(|h| h.app_id.as_ref()).unwrap_or(None) == Some(&app_id)) && client.back_connected == BackendConnectionStatus::Connected {
         //matched on keepalive
@@ -543,14 +550,13 @@ impl ProxyConfiguration<Client> for ServerConfiguration {
       }
 
       let conn = match (front_should_stick, sticky_session) {
-        (true, Some(session)) => self.backend_from_sticky_session(client, &app_id, session),
-        _ => self.backend_from_app_id(client, &app_id, front_should_stick),
+        (true, Some(session)) => self.backend_from_sticky_session(client, &app_id, session, protocol),
+        _ => self.backend_from_app_id(client, &app_id, front_should_stick, protocol),
       };
 
       match conn {
         Ok(socket) => {
-          socket.set_nodelay(true);
-          client.set_back_socket(BackendSocket::TCP(socket));
+          client.set_back_socket(socket);
           client.readiness().back_interest.insert(Ready::writable());
           client.readiness().back_interest.insert(UnixReady::hup());
           client.readiness().back_interest.insert(UnixReady::error());
